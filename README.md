@@ -213,6 +213,22 @@ Les transformations dbt embarquent plus de 25 tests automatisés : unicité des 
 
 > Cette section contient les captures démontrant les résultats du pipeline.
 
+## Résultats
+
+### Lineage dbt — les deux domaines
+![Lineage dbt](img/Lineage%20Graph_dbt.png)
+
+
+### Pipeline douanes (Airflow)
+![DAG douanes](img/ingestion_douanefr.png)
+
+
+### Pipeline Comtrade
+![DAG Comtrade](img/ingestion_comtrade.png)
+
+
+### Pipeline AIS incrémental
+![DAG AIS](img/ingestion_ais.png)
 
 
 ---
