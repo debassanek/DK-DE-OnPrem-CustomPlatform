@@ -1,0 +1,18 @@
+name: 'customplatform'
+version: '1.0.0'
+config-version: 2
+
+profile: 'customplatform'
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests", "quality"]
+
+models:
+  customplatform:
+    silver:
+      +schema: silver
+      +materialized: table
+    gold:
+      +schema: gold
+      +materialized: table

@@ -1,0 +1,40 @@
+# ============================================================
+# DK-DE-OnPrem-CustomPlatform
+# dbt profiles.yml : EXEMPLE (sans secrets)
+# Chemin attendu : dbt/profiles.yml
+#
+# Instructions :
+#   1. Copier ce fichier vers dbt/profiles.yml
+#   2. Remplacer les placeholders <...> par les valeurs réelles
+#   3. Ne JAMAIS versionner dbt/profiles.yml (déjà dans .gitignore)
+# ============================================================
+
+customplatform:
+  target: dev
+  outputs:
+
+    # ----- Environnement de développement -----
+    dev:
+      type: postgres
+      host: postgres            # Nom du service Docker (PAS localhost)
+      port: 5432
+      user: <DB_USER>           # ex : dkde
+      password: <DB_PASSWORD>   # ex : défini dans Vault / .env
+      dbname: <DB_NAME>         # ex : customplatform
+      schema: public            # Schéma par défaut (les modèles surchargent via config)
+      threads: 2                # Nombre de threads parallèles
+      keepalives_idle: 0
+      connect_timeout: 10
+
+    # ----- Environnement de production -----
+    prod:
+      type: postgres
+      host: <DB_HOST>
+      port: 5432
+      user: <DB_USER>
+      password: <DB_PASSWORD>
+      dbname: <DB_NAME>
+      schema: public
+      threads: 4
+      keepalives_idle: 0
+      connect_timeout: 10

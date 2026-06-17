@@ -1,0 +1,14 @@
+version: 2
+
+sources:
+  - name: bronze
+    schema: bronze
+    tables:
+      - name: stg_declarations_douane
+        description: "Données douanes françaises brutes - data.gouv.fr"
+      - name: stg_flux_commerciaux
+        description: "Flux commerciaux UN comtrade bruts"
+      - name: stg_mouvements_navires
+        description: "Mouvements navires AIS simulés"
+      - name: stg_clients
+        description: "Clients import/export simulés"

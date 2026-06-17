@@ -1,0 +1,60 @@
+
+version: 2
+
+models:
+  - name: dim_date
+    description: "Dimension temporelle - calendrier 2020-2026"
+    columns:
+      - name: id_date
+        tests:
+          - unique
+          - not_null
+      - name: date_complete
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_pays
+    description: "Dimension pays - codes ISO2"
+    columns:
+      - name: id_pays
+        tests:
+          - unique
+          - not_null
+      - name: code_iso2
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_marchandise
+    description: "Dimension marchandises - nomenclature HS"
+    columns:
+      - name: id_marchandise
+        tests:
+          - unique
+          - not_null
+      - name: code_hs_marchandise
+        tests:
+          - unique
+          - not_null
+
+  - name: fact_flux_commercial
+    description: "Table de faits : flux douaniers import/export"
+    columns:
+      - name: sens_flux
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['IMPORT', 'EXPORT']
+      - name: valeur_euro
+        tests:
+          - not_null
+      - name: id_date
+        tests:
+          - not_null
+      - name: id_pays
+        tests:
+          - not_null
+      - name: id_marchandise
+        tests:
+          - not_null

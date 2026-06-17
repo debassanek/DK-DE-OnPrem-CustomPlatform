@@ -1,0 +1,24 @@
+version: 2
+
+models:
+  - name: declarations_douane
+    description: "Déclarations douanières nettoyées : Silver"
+    columns:
+      - name: id_source
+        tests:
+          - unique
+          - not_null
+      - name: sens_flux
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['IMPORT', 'EXPORT']
+      - name: date_declaration
+        tests:
+          - not_null
+      - name: code_pays_destination
+        tests:
+          - not_null
+      - name: code_hs_marchandise
+        tests:
+          - not_null

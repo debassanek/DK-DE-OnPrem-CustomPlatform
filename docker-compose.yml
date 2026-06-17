@@ -1,0 +1,298 @@
+# ============================================================
+# DK-DE-OnPrem-CustomPlatform
+# Stack Data Engineering : On-Premise
+# ============================================================
+
+version: '3.8'
+
+
+# ------------------------------------------------------------
+# Variables communes Airflow
+# ------------------------------------------------------------
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.8.1-python3.11
+  environment:
+    # Executor local : pas de worker séparé (économise ~1 GB RAM)
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+
+    # Connexion metadata DB Airflow -> PostgreSQL
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+
+    # Sécurité
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+
+    # Comportement
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY}
+
+    # Connexions prédéfinies
+    AIRFLOW__CORE__DEFAULT_TIMEZONE: 'Europe/Paris'
+
+    # Connexion PostgreSQL Data Warehouse (utilisée dans les DAGs)
+    AIRFLOW_CONN_POSTGRES_DW: postgresql+psycopg2://${DW_USER}:${DW_PASSWORD}@postgres:5432/${DW_DBNAME}
+
+    # Connexion MinIO (S3-compatible)
+    AIRFLOW_CONN_MINIO_S3: s3://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000
+    
+    _PIP_ADDITIONAL_REQUIREMENTS: "apache-airflow-providers-postgres apache-airflow-providers-common-sql"
+
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./data:/opt/airflow/data                  # Fichiers ingérés (Bronze)
+    - ./python:/opt/airflow/python              # Scripts utilitaires
+  depends_on:
+    postgres:
+      condition: service_healthy
+  networks:
+    - dkde-network
+  
+
+# ============================================================
+# SERVICES
+# ============================================================
+services:
+
+# ----------------------------------------------------------
+# HashiCorp Vault : Gestion centralisée des secrets
+# ----------------------------------------------------------
+  vault:
+    image: hashicorp/vault:1.15
+    container_name: dkde_vault
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_ADDR: "http://0.0.0.0:8200"
+    cap_add:
+      - IPC_LOCK
+    command: server -dev -dev-root-token-id="${VAULT_ROOT_TOKEN}"
+    networks:
+      - dkde-network
+
+  # ----------------------------------------------------------
+  # PostgreSQL
+  # Double rôle : metadata Airflow + Data Warehouse (Gold)
+  # ----------------------------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    container_name: dkde_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      DW_USER: ${DW_USER}
+      DW_PASSWORD: ${DW_PASSWORD}
+      DW_DBNAME: ${DW_DBNAME}
+      # Second utilisateur pour le Data Warehouse
+      POSTGRES_MULTIPLE_DATABASES: airflow,customplatform
+      
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init:/docker-entrypoint-initdb.d   # Scripts exécutés au 1er démarrage
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+    restart: unless-stopped
+    networks:
+      - dkde-network
+
+  # ----------------------------------------------------------
+  # MinIO : Data Lake local (Bronze + Silver)
+  # Interface S3-compatible accessible via http://localhost:9001
+  # ----------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: dkde_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"   # API S3 (utilisée par Airflow + dbt)
+      - "9001:9001"   # Console Web MinIO
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    restart: unless-stopped
+    networks:
+      - dkde-network
+
+  # ----------------------------------------------------------
+  # MinIO Init : Création automatique des buckets au démarrage
+  # ----------------------------------------------------------
+  minio-init:
+    image: minio/mc:latest
+    container_name: dkde_minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
+      mc mb --ignore-existing local/bronze;
+      mc mb --ignore-existing local/silver;
+      mc mb --ignore-existing local/raw;
+      mc mb --ignore-existing local/archive;
+      echo 'Buckets créés : bronze, silver, raw, archive';
+      exit 0;
+      "
+    networks:
+      - dkde-network
+
+  # ----------------------------------------------------------
+  # Airflow : Initialisation (exécuté une seule fois)
+  # ----------------------------------------------------------
+  airflow-init:
+    <<: *airflow-common
+    container_name: dkde_airflow_init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username admin \
+          --password admin \
+          --firstname Debassane \
+          --lastname DK \
+          --role Admin \
+          --email admin@dkde.local
+        echo "Airflow initialisé avec succès"
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ----------------------------------------------------------
+  # Airflow Webserver : Interface UI
+  # Accessible via http://localhost:8080
+  # ----------------------------------------------------------
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: dkde_airflow_webserver
+    command: webserver
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./data:/opt/airflow/data
+      - ./python:/opt/airflow/python
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+          cpus: '2.0'
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  # ----------------------------------------------------------
+  # Airflow Scheduler : Déclenchement automatique des DAGs
+  # ----------------------------------------------------------
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: dkde_airflow_scheduler
+    command: scheduler
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./data:/opt/airflow/data
+      - ./python:/opt/airflow/python
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob 2>&1 | grep -q 'Found one alive'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+          cpus: '2.0'
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  # ----------------------------------------------------------
+  # dbt : Transformation SQL (Bronze -> Silver -> Gold)
+  # Conteneur de travail : exécuté manuellement ou via Airflow
+  # ----------------------------------------------------------
+  dbt:
+    image: ghcr.io/dbt-labs/dbt-postgres:1.7.0
+    container_name: dkde_dbt
+    ports:
+    - "8081:8081"
+    volumes:
+      - ./dbt:/usr/app/dbt
+      - ./dbt/profiles.yml:/root/.dbt/profiles.yml
+    working_dir: /usr/app/dbt
+    environment:
+      DBT_PROFILES_DIR: /root/.dbt
+      DW_USER: ${DW_USER}
+      DW_PASSWORD: ${DW_PASSWORD}
+      DW_DBNAME: ${DW_DBNAME}
+    entrypoint: ["tail", "-f", "/dev/null"]   # Conteneur en veille : appels manuels
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    depends_on:
+      - postgres
+    networks:
+      - dkde-network
+
+# ============================================================
+# VOLUMES : Persistance des données
+# ============================================================
+volumes:
+  postgres_data:
+    name: dkde_postgres_data
+  minio_data:
+    name: dkde_minio_data
+  vault_data:
+    name: dkde_vault_data
+
+# ============================================================
+# RÉSEAU : Isolation des services
+# ============================================================
+networks:
+  dkde-network:
+    name: dkde-network
+    driver: bridge
