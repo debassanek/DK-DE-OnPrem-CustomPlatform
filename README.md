@@ -1,4 +1,4 @@
-# DK-DE-OnPrem-CustomPlatform
+Plateforme analytique **on-premise** sur données logistiques portuaires, douanières et de commerce international. Projet Data Engineering démontrant une architecture Lakehouse complète sans dépendance cloud, avec une couche de gouvernance et de sécurité des données.
 
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=white)
 ![Apache Airflow](https://img.shields.io/badge/Apache%20Airflow-017CEE?style=flat&logo=apacheairflow&logoColor=white)
@@ -8,8 +8,6 @@
 ![HashiCorp Vault](https://img.shields.io/badge/Vault-FFEC6E?style=flat&logo=vault&logoColor=black)
 ![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)
 ![Power BI](https://img.shields.io/badge/Power%20BI-F2C811?style=flat&logo=powerbi&logoColor=black)
-
-Plateforme analytique **on-premise** sur données logistiques portuaires, douanières et de commerce international. Projet Data Engineering démontrant une architecture Lakehouse complète sans dépendance cloud, avec une couche de gouvernance et de sécurité des données.
 
 ---
 
