@@ -224,7 +224,7 @@ Les transformations dbt embarquent plus de 25 tests automatisés : unicité des 
 
 ## Résultats
 
-### Lineage dbt — les deux domaines
+### Lineage dbt : les deux domaines
 ![Lineage dbt](img/Lineage%20Graph_dbt.png)
 
 
